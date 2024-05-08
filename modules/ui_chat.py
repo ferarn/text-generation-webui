@@ -14,8 +14,107 @@ inputs = ('Chat input', 'interface_state')
 reload_arr = ('history', 'name1', 'name2', 'mode', 'chat_style', 'character_menu')
 clear_arr = ('delete_chat-confirm', 'delete_chat', 'delete_chat-cancel')
 
+js_chat_html_update = """
+(newHTML) => {
+    function areNodesEqualOrTagsMatch(n1, n2) {
+        if (!n1 || !n2 || n1.nodeType !== n2.nodeType)
+            return false;
+        if (n1.nodeType !== Node.ELEMENT_NODE)
+            return n1.isEqualNode(n2);
+        return (n1.tagName === n2.tagName);
+    }
+
+    function areSameTagElemsShallowEqual(e1, e2) {
+        const t1 = document.createElement('template');
+        const t2 = document.createElement('template');
+        t1.innerHTML = e1.outerHTML; t2.innerHTML = e2.outerHTML;
+        const c1 = t1.content.firstChild; const c2 = t2.content.firstChild;
+        c1.replaceChildren(); c2.replaceChildren();
+        return c1.isEqualNode(c2);
+    }
+
+    function updateNodeIncrementalRecursive(oldNode, newNode) {
+        if (areNodesEqualOrTagsMatch(oldNode, newNode)) {
+            // Update attributes if needed
+            if (oldNode.nodeType === Node.ELEMENT_NODE && !areSameTagElemsShallowEqual(oldNode, newNode)) {
+                for (let i = 0; i < oldNode.attributes.length; i++) {
+                    const attrOldName = oldNode.attributes[i].name;
+                    if (!newNode.hasAttribute(attrOldName))
+                        oldNode.removeAttribute(attrOldName);
+                }
+                for (let i = 0; i < newNode.attributes.length; i++) {
+                    const attrNew = newNode.attributes[i];
+                    const attrNewName = attrNew.name;
+                    const attrNewVal = attrNew.value;
+                    if (!oldNode.hasAttribute(attrNewName))
+                        oldNode.setAttribute(attrNewName, attrNewVal);
+                    else {
+                        const attrOldVal = oldNode.getAttribute(attrNewName);
+                        if (attrOldVal !== attrNewVal)
+                            oldNode.setAttribute(attrNewName, attrNewVal);
+                    }
+                }
+            }
+
+            // Update children recursively
+            const oldChildren = Array.from(oldNode.childNodes);
+            const newChildren = Array.from(newNode.childNodes);
+            const maxCount = Math.max(oldChildren.length, newChildren.length);
+            for (let i = 0; i < maxCount; i++) {
+                if (i < oldChildren.length && i < newChildren.length)
+                    updateNodeIncrementalRecursive(oldChildren[i], newChildren[i]);
+                else if (i < newChildren.length)
+                    oldNode.appendChild(newChildren[i]);
+                else
+                    oldNode.removeChild(oldChildren[i]);
+            }
+        } else {
+            oldNode.parentNode.replaceChild(newNode, oldNode);
+        }
+    }
+
+    function updateInnerHTMLIncremental(container, newHTML) {
+        const t = document.createElement('template');
+        t.innerHTML = newHTML;
+        const newChildren = Array.from(t.content.childNodes);
+        const oldChildren = Array.from(container.childNodes);
+
+        const maxCount = Math.max(oldChildren.length, newChildren.length);
+        for (let i = 0; i < maxCount; i++) {
+            if (i < oldChildren.length && i < newChildren.length)
+                updateNodeIncrementalRecursive(oldChildren[i], newChildren[i]);
+            else if (i < newChildren.length)
+                container.appendChild(newChildren[i]);
+            else
+                container.removeChild(oldChildren[i]);
+        }
+    }
+
+    //
+    // Update the chat in "diff" mode (only necessary updates!)
+    //
+    const chatParent = document.getElementById('chat').parentNode;
+    updateInnerHTMLIncremental(chatParent, newHTML);
+
+    // Reset holder, we don't need it to store the HTML content anymore
+    const holder = document.querySelector('#chat_html_holder > label > input');
+    holder.value = '';
+}
+"""
+
+
+def create_dataholder_gradio(elem_id: str = None):
+    # Data-holder text-box for passing text data from Python to javascript indirectly
+    # This is a workaround needed because Gradio does not allow passing data from Python
+    # to Javascript directly (only from JS->Python)
+    dataholder_textbox = gr.Textbox(visible=False, container=False, interactive=False,
+                                    max_lines=1, autoscroll=False,
+                                    min_width=0, type='text', elem_id=elem_id)
+    return dataholder_textbox
+
 
 def create_ui():
+    global js_chat_html_update
     mu = shared.args.multi_user
 
     shared.gradio['Chat input'] = gr.State()
@@ -25,6 +124,10 @@ def create_ui():
         with gr.Row():
             with gr.Column(elem_id='chat-col'):
                 shared.gradio['display'] = gr.HTML(value=chat_html_wrapper({'internal': [], 'visible': []}, '', '', 'chat', 'cai-chat', ''))
+
+                # Data-holder for passing chat HTML to javascript and thus making chat updates more efficient (incrementally)
+                chat_html_holder = shared.gradio['chat_html_holder'] = create_dataholder_gradio(elem_id='chat_html_holder')
+                chat_html_holder.change(None, [chat_html_holder], None, js=js_chat_html_update)
 
                 with gr.Row(elem_id="chat-input-row"):
                     with gr.Column(scale=1, elem_id='gr-hover-container'):
@@ -172,7 +275,6 @@ def create_chat_settings_ui():
 
 
 def create_event_handlers():
-
     # Obsolete variables, kept for compatibility with old extensions
     shared.input_params = gradio(inputs)
     shared.reload_inputs = gradio(reload_arr)
@@ -182,63 +284,100 @@ def create_event_handlers():
         lambda x: (x, ''), gradio('textbox'), gradio('Chat input', 'textbox'), show_progress=False).then(
         chat.generate_chat_reply_wrapper, gradio(inputs), gradio('display', 'history'), show_progress=False).then(
         None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
+        chat.generate_chat_reply_wrapper, gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
+        ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
+        lambda: None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
 
     shared.gradio['textbox'].submit(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         lambda x: (x, ''), gradio('textbox'), gradio('Chat input', 'textbox'), show_progress=False).then(
         chat.generate_chat_reply_wrapper, gradio(inputs), gradio('display', 'history'), show_progress=False).then(
         None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
+        chat.generate_chat_reply_wrapper, gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
+        ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
+        lambda: None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
 
     shared.gradio['Regenerate'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         partial(chat.generate_chat_reply_wrapper, regenerate=True), gradio(inputs), gradio('display', 'history'), show_progress=False).then(
         None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
+        partial(chat.generate_chat_reply_wrapper, regenerate=True), gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
+        ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
+        lambda: None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
 
     shared.gradio['Continue'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         partial(chat.generate_chat_reply_wrapper, _continue=True), gradio(inputs), gradio('display', 'history'), show_progress=False).then(
         None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
+        partial(chat.generate_chat_reply_wrapper, _continue=True), gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
+        ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
+        lambda: None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
 
     shared.gradio['Impersonate'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         lambda x: x, gradio('textbox'), gradio('Chat input'), show_progress=False).then(
         chat.impersonate_wrapper, gradio(inputs), gradio('textbox', 'display'), show_progress=False).then(
         None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
+        chat.impersonate_wrapper, gradio(inputs), gradio('textbox', 'chat_html_holder'), show_progress=False).then(
+        ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
+        lambda: None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
 
     shared.gradio['Replace last reply'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         chat.handle_replace_last_reply_click, gradio('textbox', 'interface_state'), gradio('history', 'display', 'textbox'), show_progress=False)
+        chat.replace_last_reply, gradio('textbox', 'interface_state'), gradio('history')).then(
+        lambda: '', None, gradio('textbox'), show_progress=False).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None)
 
     shared.gradio['Send dummy message'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_send_dummy_message_click, gradio('textbox', 'interface_state'), gradio('history', 'display', 'textbox'), show_progress=False)
+        chat.send_dummy_message, gradio('textbox', 'interface_state'), gradio('history')).then(
+        lambda: '', None, gradio('textbox'), show_progress=False).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None)
 
     shared.gradio['Send dummy reply'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_send_dummy_reply_click, gradio('textbox', 'interface_state'), gradio('history', 'display', 'textbox'), show_progress=False)
+        chat.send_dummy_reply, gradio('textbox', 'interface_state'), gradio('history')).then(
+        lambda: '', None, gradio('textbox'), show_progress=False).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None)
 
     shared.gradio['Remove last'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_remove_last_click, gradio('interface_state'), gradio('history', 'display', 'textbox'), show_progress=False)
+        chat.remove_last_message, gradio('history'), gradio('textbox', 'history'), show_progress=False).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None)
 
     shared.gradio['Stop'].click(
         stop_everything_event, None, None, queue=False).then(
-        chat.redraw_html, gradio(reload_arr), gradio('display'), show_progress=False)
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder'))
 
     if not shared.args.multi_user:
         shared.gradio['unique_id'].select(
-            ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-            chat.handle_unique_id_select, gradio('interface_state'), gradio('history', 'display'), show_progress=False)
+            chat.load_history, gradio('unique_id', 'character_menu', 'mode'), gradio('history')).then(
+            chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder'))
 
     shared.gradio['Start new chat'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_start_new_chat_click, gradio('interface_state'), gradio('history', 'display', 'unique_id'), show_progress=False)
+        chat.start_new_chat, gradio('interface_state'), gradio('history')).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        lambda x: gr.update(choices=(histories := chat.find_all_histories(x)), value=histories[0]), gradio('interface_state'), gradio('unique_id'))
 
     shared.gradio['delete_chat'].click(lambda: [gr.update(visible=True), gr.update(visible=False), gr.update(visible=True)], None, gradio(clear_arr))
     shared.gradio['delete_chat-cancel'].click(lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)], None, gradio(clear_arr))
     shared.gradio['delete_chat-confirm'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_delete_chat_confirm_click, gradio('interface_state'), gradio('history', 'display', 'unique_id') + gradio(clear_arr), show_progress=False)
+        lambda x, y: str(chat.find_all_histories(x).index(y)), gradio('interface_state', 'unique_id'), gradio('temporary_text')).then(
+        chat.delete_history, gradio('unique_id', 'character_menu', 'mode'), None).then(
+        chat.load_history_after_deletion, gradio('interface_state', 'temporary_text'), gradio('history', 'unique_id')).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        lambda: [gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)], None, gradio(clear_arr))
 
     shared.gradio['rename_chat'].click(chat.handle_rename_chat_click, None, gradio('rename_to', 'rename_to-confirm', 'rename_to-cancel'), show_progress=False)
     shared.gradio['rename_to-cancel'].click(lambda: [gr.update(visible=False)] * 3, None, gradio('rename_to', 'rename_to-confirm', 'rename_to-cancel'), show_progress=False)
@@ -252,20 +391,27 @@ def create_event_handlers():
 
     shared.gradio['load_chat_history'].upload(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_upload_chat_history, gradio('load_chat_history', 'interface_state'), gradio('history', 'display', 'unique_id'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.switch_tabs_js}; switch_to_chat()}}')
+        chat.start_new_chat, gradio('interface_state'), gradio('history')).then(
+        chat.load_history_json, gradio('load_chat_history', 'history'), gradio('history')).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        lambda x: gr.update(choices=(histories := chat.find_all_histories(x)), value=histories[0]), gradio('interface_state'), gradio('unique_id')).then(
+        chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
+        lambda: None, None, None, js=f'() => {{{ui.switch_tabs_js}; switch_to_chat()}}')
 
     shared.gradio['character_menu'].change(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_character_menu_change, gradio('interface_state'), gradio('history', 'display', 'name1', 'name2', 'character_picture', 'greeting', 'context', 'unique_id'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.update_big_picture_js}; updateBigPicture()}}')
+        chat.load_latest_history, gradio('interface_state'), gradio('history')).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        lambda x: gr.update(choices=(histories := chat.find_all_histories(x)), value=histories[0]), gradio('interface_state'), gradio('unique_id')).then(
+        lambda: None, None, None, js=f'() => {{{ui.update_big_picture_js}; updateBigPicture()}}')
 
     shared.gradio['mode'].change(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_mode_change, gradio('interface_state'), gradio('history', 'display', 'chat_style', 'chat-instruct_command', 'unique_id'), show_progress=False).then(
-        None, gradio('mode'), None, js="(mode) => {mode === 'instruct' ? document.getElementById('character-menu').parentNode.parentNode.style.display = 'none' : document.getElementById('character-menu').parentNode.parentNode.style.display = ''}")
+        chat.load_latest_history, gradio('interface_state'), gradio('history')).then(
+        chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder')).then(
+        lambda x: gr.update(choices=(histories := chat.find_all_histories(x)), value=histories[0]), gradio('interface_state'), gradio('unique_id'))
 
-    shared.gradio['chat_style'].change(chat.redraw_html, gradio(reload_arr), gradio('display'), show_progress=False)
+    shared.gradio['chat_style'].change(chat.redraw_html, gradio(reload_arr), gradio('chat_html_holder'))
     shared.gradio['Copy last reply'].click(chat.send_last_reply_to_input, gradio('history'), gradio('textbox'), show_progress=False)
 
     # Save/delete a character
@@ -294,8 +440,8 @@ def create_event_handlers():
     shared.gradio['upload_img_tavern'].upload(chat.check_tavern_character, gradio('upload_img_tavern'), gradio('tavern_name', 'tavern_desc', 'tavern_json', 'Submit tavern character'), show_progress=False)
     shared.gradio['upload_img_tavern'].clear(lambda: (None, None, None, gr.update(interactive=False)), None, gradio('tavern_name', 'tavern_desc', 'tavern_json', 'Submit tavern character'), show_progress=False)
     shared.gradio['your_picture'].change(
-        ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        chat.handle_your_picture_change, gradio('your_picture', 'interface_state'), gradio('display'), show_progress=False)
+        chat.upload_your_profile_picture, gradio('your_picture'), None).then(
+        partial(chat.redraw_html, reset_cache=True), gradio(reload_arr), gradio('chat_html_holder'))
 
     shared.gradio['send_instruction_to_default'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
