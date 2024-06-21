@@ -1,3 +1,10 @@
-# Only used by the one-click installer.
-# Example:
-# --listen --api
+--settings "settings.yaml"
+--gradio-auth "ferarn:ferarn0494"
+--character "The Assistant"
+--model_type chat-instruct
+--loader transformers
+--chat-buttons
+--verbose
+--api
+
+--auto-launch
