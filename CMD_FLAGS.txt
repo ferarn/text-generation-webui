@@ -6,8 +6,6 @@
 --chat-buttons
 --auto-launch
 
---deepspeed
-
 --listen
 --listen-host "localhost"
 --listen-port "7882"

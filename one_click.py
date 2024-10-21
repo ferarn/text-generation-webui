@@ -427,9 +427,7 @@ def update_requirements(initial_installation=False, pull=True):
 
 
 def launch_webui():
-    run_cmd(f"deepspeed --num_gpus=1 server.py --deepspeed {flags}", environment=True)
-    # Switch with the next line for remote debugging (VSCode: Python Debugger: Remote Attach)
-    # run_cmd(f"python -m debugpy --listen :11111 --wait-for-client server.py {flags}", environment=True)
+    run_cmd(f"python server.py --deepspeed {flags}", environment=True)
 
 
 if __name__ == "__main__":
