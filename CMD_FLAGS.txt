@@ -1,3 +1,17 @@
-# Only used by the one-click installer.
-# Example:
-# --listen --api
+--gradio-auth "ferarn:ferarn0494"
+
+#--model "Mistral-NeMo-12B-Instruct-HF"
+--settings "settings.yaml"
+
+--chat-buttons
+--auto-launch
+
+--deepspeed
+
+--listen
+--listen-host "localhost"
+--listen-port "7882"
+
+--api
+#--api-key API_KEY
+--api-port "7883"

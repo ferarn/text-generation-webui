@@ -427,7 +427,7 @@ def update_requirements(initial_installation=False, pull=True):
 
 
 def launch_webui():
-    run_cmd(f"python server.py {flags}", environment=True)
+    run_cmd(f"deepspeed --num_gpus=1 server.py --deepspeed {flags}", environment=True)
 
 
 if __name__ == "__main__":
