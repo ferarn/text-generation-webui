@@ -282,8 +282,6 @@ def create_event_handlers():
     shared.gradio['Generate'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         lambda x: (x, ''), gradio('textbox'), gradio('Chat input', 'textbox'), show_progress=False).then(
-        chat.generate_chat_reply_wrapper, gradio(inputs), gradio('display', 'history'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
         chat.generate_chat_reply_wrapper, gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
@@ -292,8 +290,6 @@ def create_event_handlers():
     shared.gradio['textbox'].submit(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         lambda x: (x, ''), gradio('textbox'), gradio('Chat input', 'textbox'), show_progress=False).then(
-        chat.generate_chat_reply_wrapper, gradio(inputs), gradio('display', 'history'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
         chat.generate_chat_reply_wrapper, gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
@@ -301,8 +297,6 @@ def create_event_handlers():
 
     shared.gradio['Regenerate'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        partial(chat.generate_chat_reply_wrapper, regenerate=True), gradio(inputs), gradio('display', 'history'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
         partial(chat.generate_chat_reply_wrapper, regenerate=True), gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
@@ -310,8 +304,6 @@ def create_event_handlers():
 
     shared.gradio['Continue'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
-        partial(chat.generate_chat_reply_wrapper, _continue=True), gradio(inputs), gradio('display', 'history'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
         partial(chat.generate_chat_reply_wrapper, _continue=True), gradio(inputs), gradio('chat_html_holder', 'history'), show_progress=False).then(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         chat.save_history, gradio('history', 'unique_id', 'character_menu', 'mode'), None).then(
@@ -320,8 +312,6 @@ def create_event_handlers():
     shared.gradio['Impersonate'].click(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         lambda x: x, gradio('textbox'), gradio('Chat input'), show_progress=False).then(
-        chat.impersonate_wrapper, gradio(inputs), gradio('textbox', 'display'), show_progress=False).then(
-        None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
         chat.impersonate_wrapper, gradio(inputs), gradio('textbox', 'chat_html_holder'), show_progress=False).then(
         ui.gather_interface_values, gradio(shared.input_elements), gradio('interface_state')).then(
         lambda: None, None, None, js=f'() => {{{ui.audio_notification_js}}}')
